@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Main canopy node service
+  canopy:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile
+    container_name: canopy-node
+    restart: unless-stopped
+    ports:
+      - "${P2P_PORT:-9001}:9001"
+      - "${RPC_PORT:-50832}:50832"
+    volumes:
+      - canopy-data:/root/.canopy
+    environment:
+      - CANOPY_ENV=${CANOPY_ENV:-mainnet}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    networks:
+      - canopy-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:50832/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Optimized production node
+  canopy-optimized:
+    build:
+      context: .
+      dockerfile: .docker/Dockerfile.optimized
+    container_name: canopy-node-optimized
+    restart: unless-stopped
+    ports:
+      - "${P2P_PORT:-9001}:9001"
+      - "${RPC_PORT:-50832}:50832"
+    volumes:
+      - canopy-data:/root/.canopy
+    environment:
+      - CANOPY_ENV=${CANOPY_ENV:-mainnet}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    networks:
+      - canopy-network
+    profiles:
+      - optimized
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:50832/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Auto-update service (Go implementation)
+  auto-update:
+    build:
+      context: .
+      dockerfile: .docker/auto-update/Dockerfile.go
+    container_name: canopy-auto-update
+    restart: unless-stopped
+    depends_on:
+      canopy:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - canopy-data:/root/.canopy
+    environment:
+      - UPDATE_INTERVAL=${UPDATE_INTERVAL:-3600}
+      - CANOPY_CONTAINER=canopy-node
+    networks:
+      - canopy-network
+    profiles:
+      - auto-update
+
+volumes:
+  canopy-data:
+    driver: local
+
+networks:
+  canopy-network:
+    driver: bridge
